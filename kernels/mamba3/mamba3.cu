@@ -43,7 +43,9 @@ struct mamba3_fwd_layout {
         b_vec b[2];
         b_vec b_padding[6];
         angle_vec angle[2];
-
+        // TODO: trapezoidal boundary correction at tid==63 needs next chunk's a[0]/b[0].
+        // Scalar global reads in the producer deadlock (TMA barrier doesn't cover them).
+        // Fix: fold boundary data into TMA tile layout or precompute on host.
     };
     struct output_block {
         o_tile o[2];
@@ -79,11 +81,13 @@ struct mamba3_fwd_template {
     __device__ static inline void build_trapezoidal_scale(consumer_compute_args<layout> args, int warpgroupid) {
         if (warpgroup::warpid() <= 1) {
             int tid = warpgroup::laneid();
-            float s = 1.0f;
+            float s;
             if (tid < 63) {
                 float a_next = args.input.a[warpgroupid][tid + 1];
                 float b_next = args.input.b[warpgroupid][tid + 1];
                 s = trap_scale(a_next, b_next);
+            } else {
+                s = 1.0f; // TODO: boundary correction needed (see input_block comment)
             }
             args.scratch.b_scale[warpgroupid][tid] = s;
         }
